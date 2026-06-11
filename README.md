@@ -1,90 +1,150 @@
-# Tako CLI
+<p align="center">
+  <img src="https://img.shields.io/npm/v/tako-cli?color=blue&label=version" alt="version" />
+  <img src="https://img.shields.io/npm/dm/tako-cli?color=green" alt="downloads" />
+  <img src="https://img.shields.io/github/license/tako-dev/cli" alt="license" />
+</p>
 
-AI coding tools launcher — unified interface for managing and running AI development tools (Claude Code, Codex, Gemini, OpenCode).
+<h1 align="center">🐙 Tako CLI</h1>
 
-## Quick Install
+<p align="center">
+  <b>AI Coding Tools Launcher</b> — unified interface for Claude Code, Codex, Gemini & more<br/>
+  <b>AI 编码工具启动器</b> — 统一管理 Claude Code、Codex、Gemini 等 AI 开发工具
+</p>
+
+---
+
+## Quick Install / 快速安装
 
 ```bash
 curl -fsSL https://cdn.jsdelivr.net/npm/tako-cli/install.sh | bash
 ```
 
-Or via npm:
+Or via npm / 或通过 npm：
 
 ```bash
 npm install -g tako-cli
 ```
 
-## Setup
+> China users: Tako automatically detects your region and uses npmmirror for fast installs.
+> 国内用户：Tako 自动检测网络环境并使用 npmmirror 镜像加速安装。
+
+---
+
+## Usage / 使用方式
 
 ```bash
-tako                          # First run: interactive setup
-tako install claude-code      # Install Claude Code
-tako install codex            # Install Codex
+tako                          # Interactive TUI launcher / 交互式启动器
+tako --claude                 # Quick-launch Claude Code / 快速启动 Claude Code
+tako --codex                  # Quick-launch Codex / 快速启动 Codex
+tako --gemini                 # Quick-launch Gemini CLI / 快速启动 Gemini
 ```
 
-## Usage
+### TUI Shortcuts / TUI 快捷键
+
+| Key | Action |
+|-----|--------|
+| `←→` | Switch between tools / 切换工具 |
+| `↑↓` | Navigate projects & options / 选择项目和选项 |
+| `Enter` | Launch / 启动 |
+| `a` | Agent management / Agent 管理 |
+| `p` | Provider settings / 服务商管理 |
+| `q` | Quit / 退出 |
+
+---
+
+## Agent Session Management / Agent 会话管理
+
+Manage persistent AI agent sessions from CLI or TUI. Sessions survive shell restarts.
+
+从 CLI 或 TUI 管理持久化的 AI agent 会话。会话跨 shell 重启保持。
 
 ```bash
-tako                          # Interactive TUI launcher
-tako --claude                 # Quick-launch Claude Code
-tako --codex                  # Quick-launch Codex
-tako --gemini                 # Quick-launch Gemini CLI
-tako agent --model <model>    # Start agent mode with specific model
+tako agent start claude --model claude-sonnet-4-6   # Create session / 创建会话
+tako agent list                                      # List sessions / 列出会话
+tako agent send <sid> "your prompt"                  # Send message / 发送消息
+tako agent attach <sid>                              # Live-tail log / 实时跟踪
+tako agent cancel <sid>                              # Cancel current turn / 中止当前轮
+tako agent close <sid> [--purge]                     # Close session / 关闭会话
 ```
 
-## Skills
-
-Tako bundles reusable skills for AI agents that enhance Claude Code's capabilities.
-
-### Available Skills
-
-| Skill | Description |
-|-------|-------------|
-| model-benchmark | Model capability scores and recommendations from E2E testing across 16 models |
-| tako-agent | Long-running agent session management — start/resume/monitor/close Claude/Codex agents |
-
-### Installing Skills
+**Advanced / 高级：**
 
 ```bash
-tako skill list               # Show available skills
-tako skill install --all      # Install all skills to .claude/skills/
-tako skill install tako-agent # Install specific skill
+tako agent start codex --approval external           # External approval mode / 外置审批
+tako agent approve <sid> <id> allow --rule "^curl"   # Approve + whitelist / 审批+加白
+tako agent wait <sid> --json                         # Block until decision point / 阻塞到决策点
+tako agent policy <sid> show                         # View policy / 查看策略
 ```
 
-Skills are installed to `.claude/skills/<name>/SKILL.md` and automatically picked up by Claude Code.
+In TUI, press `a` to open the Agent page — create, monitor, send messages, and approve tool calls visually.
 
-Once installed, Claude Code can use the skill to manage agent sessions for you — just say things like "dispatch an agent to research X" or "start a codex session to refactor Y".
+在 TUI 中按 `a` 进入 Agent 管理页 — 可视化创建、监控、发送消息和审批工具调用。
 
-## Agent Session Management
+---
 
-Tako includes a built-in agent session manager accessible from both CLI and TUI:
+## Skills / 技能
+
+Tako bundles reusable skills that enhance Claude Code's capabilities. Install them to your project and Claude Code picks them up automatically.
+
+Tako 内置可复用技能，增强 Claude Code 的能力。安装到项目后 Claude Code 自动识别。
+
+### Install via CLI / 通过 CLI 安装
 
 ```bash
-tako agent start claude --model claude-sonnet-4-6   # Create a session
-tako agent list                                      # List all sessions
-tako agent send <sid> "your prompt"                  # Send a message
-tako agent attach <sid>                              # Live-tail the log
-tako agent close <sid>                               # Close session
+tako skill list               # List available skills / 列出可用技能
+tako skill install --all      # Install all / 全部安装
+tako skill install tako-agent # Install specific / 安装指定技能
 ```
 
-In the TUI (`tako`), press `a` to open the Agent management page where you can create, monitor, and interact with sessions visually.
+### Install via GitHub / 通过 GitHub 安装
 
-## Features
+Copy the skill file directly from this repo into your project:
 
-- Unified launcher for multiple AI coding tools
-- Agent session management (multi-session, persistent, approval workflow)
-- Model switching via environment variable (doesn't pollute global settings)
-- Provider management (Tako API, local models)
-- Bundled skills for AI agent enhancement
-- China-optimized: automatic mirror detection for fast installs
+直接从仓库复制 skill 文件到你的项目：
 
-## Development
+```bash
+# tako-agent skill
+mkdir -p .claude/skills/tako-agent
+curl -fsSL https://raw.githubusercontent.com/tako-dev/cli/main/skills/tako-agent/SKILL.md \
+  -o .claude/skills/tako-agent/SKILL.md
+
+# model-benchmark skill
+mkdir -p .claude/skills/model-benchmark
+curl -fsSL https://raw.githubusercontent.com/tako-dev/cli/main/skills/model-benchmark/SKILL.md \
+  -o .claude/skills/model-benchmark/SKILL.md
+```
+
+### Available Skills / 可用技能
+
+| Skill | Description | 描述 |
+|-------|-------------|------|
+| 🤖 `tako-agent` | Agent session management — start/resume/monitor/close sessions | Agent 会话管理 — 启动/续接/监控/关闭会话 |
+| 📊 `model-benchmark` | Model capability scores from E2E testing across 16 models | 16 模型端到端评测能力评分 |
+
+---
+
+## Features / 功能特性
+
+| Feature | Description |
+|---------|-------------|
+| 🚀 **Unified Launcher** | One TUI for Claude Code, Codex, Gemini |
+| 🤖 **Agent Sessions** | Multi-session, persistent, approval workflow |
+| 🔄 **Model Switching** | Per-session via env var, doesn't pollute global settings |
+| 🔌 **Provider Management** | Tako API, Anthropic, DeepSeek, Xiaomi, custom |
+| 📦 **Bundled Skills** | Install to `.claude/skills/` for agent enhancement |
+| 🇨🇳 **China Optimized** | Auto mirror detection, npmmirror acceleration |
+
+---
+
+## Development / 开发
 
 ```bash
 bun install
 bun run build
 bun test
 ```
+
+---
 
 ## License
 
