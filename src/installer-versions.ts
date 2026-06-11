@@ -108,6 +108,17 @@ export async function installAtVersion(client: ClientConfig, version: string): P
  * 获取本地当前安装的版本（从配置读）。
  */
 export async function getInstalledVersion(client: ClientConfig): Promise<string | null> {
+  // 优先读实际 node_modules 里的版本（真实安装状态）
+  const clientDir = getClientDir(client.id);
+  const pkgPath = join(clientDir, "node_modules", client.package, "package.json");
+  try {
+    const file = Bun.file(pkgPath);
+    if (await file.exists()) {
+      const pkg = await file.json();
+      if (pkg.version) return pkg.version;
+    }
+  } catch { /* fallback to config */ }
+  // 回退到 config 记录
   const config = await loadConfig();
   return config.installedClients[client.id]?.version ?? null;
 }

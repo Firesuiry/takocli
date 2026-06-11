@@ -34,7 +34,15 @@ export async function launchClient(
 
     const binFile = Bun.file(binPath);
     if (!(await binFile.exists())) {
-      return { success: false, error: `找不到可执行文件: ${binPath}` };
+      // Tako 管理目录没找到，fallback 到 PATH 中的全局安装
+      const { execSync } = await import("node:child_process");
+      try {
+        const globalBin = execSync(`which ${client.command}`, { encoding: "utf8" }).trim();
+        if (globalBin) binPath = globalBin;
+        else return { success: false, error: `找不到 ${client.command}，请运行 tako install ${client.id}` };
+      } catch {
+        return { success: false, error: `找不到 ${client.command}，请运行 tako install ${client.id}` };
+      }
     }
 
     const clientEnvVars = client.getEnvVars(providerContext);
