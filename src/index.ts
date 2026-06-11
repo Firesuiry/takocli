@@ -1,0 +1,198 @@
+#!/usr/bin/env bun
+
+// 导入客户端（自动注册）
+import "./clients";
+
+// 导入模块
+import { main } from "./ui";
+import { checkAndUpdate } from "./updater";
+import { getClient } from "./clients/base";
+import { launchClientUnified } from "./launcher";
+import { t } from "./i18n";
+import { track, identify, shutdown } from "./analytics";
+import { statusLineCommand, injectStatusLineConfig } from "./statusline";
+import { selectProviderForClient } from "./ui/providers";
+import { loadCatalog, refreshCatalog } from "./models";
+import { listAvailableVersions, installAtVersion, getInstalledVersion } from "./installer-versions";
+import { IS_DEV } from "./config";
+
+const VERSION = process.env.VERSION || "dev";
+
+function showHelp() {
+  console.log(`
+${t("cli.version", { version: VERSION })}
+
+${t("cli.usage")}
+
+${t("cli.options")}
+${t("cli.optionVersion")}
+${t("cli.optionHelp")}
+
+${t("cli.shortcuts")}
+${t("cli.shortcutClaude")}
+${t("cli.shortcutCodex")}
+${t("cli.shortcutGemini")}
+
+${t("cli.examples")}
+${t("cli.exampleInteractive")}
+${t("cli.exampleClaude")}
+${t("cli.exampleCodex")}
+${t("cli.exampleGemini")}
+`);
+}
+
+/**
+ * tako install <client> [version]
+ *  - 仅 client：列出该 client 对应 npm 包的所有版本（标记当前安装版本）
+ *  - client+version：安装指定版本到 TOOLS_DIR/<client>
+ */
+async function runInstallCommand(rest: string[]): Promise<void> {
+  const [clientId, version] = rest;
+  if (!clientId) {
+    console.error("用法: tako install <client> [version]");
+    console.error("  tako install claude-code              # 列出所有可用版本");
+    console.error("  tako install claude-code 1.0.5        # 安装指定版本");
+    process.exit(1);
+  }
+  const client = getClient(clientId);
+  if (!client) {
+    console.error(`未知 client: ${clientId}`);
+    process.exit(1);
+  }
+
+  if (!version) {
+    try {
+      const versions = await listAvailableVersions(client.package);
+      const current = await getInstalledVersion(client);
+      const top = versions.slice(0, 30);
+      console.log(`${client.name} (${client.package}) 最近 ${top.length} 个版本：`);
+      for (const v of top) {
+        const marker = v.version === current ? " ← 当前" : "";
+        const t = v.publishedAt ? `  ${v.publishedAt.slice(0, 10)}` : "";
+        console.log(`  ${v.version}${t}${marker}`);
+      }
+      console.log(`\n安装：tako install ${clientId} <version>`);
+    } catch (e) {
+      console.error("获取版本列表失败:", (e as Error).message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  console.log(`正在安装 ${client.package}@${version} 到 ${client.id}...`);
+  try {
+    await installAtVersion(client, version);
+    console.log(`✓ ${client.name} 已切换到 ${version}`);
+  } catch (e) {
+    console.error("安装失败:", (e as Error).message);
+    process.exit(1);
+  }
+}
+
+/**
+ * 快捷启动（--claude, --codex, --gemini）
+ * 自动选 Provider，不弹 Ink 菜单
+ */
+async function quickLaunch(clientId: string, clientName: string): Promise<void> {
+  const client = getClient(clientId);
+  if (!client) {
+    console.error(t("cli.clientNotFound", { client: clientName }));
+    process.exit(1);
+  }
+
+  const providerContext = await selectProviderForClient(clientId);
+  if (!providerContext) {
+    console.error("未配置可用的服务商");
+    process.exit(1);
+  }
+
+  const result = await launchClientUnified(client, { providerContext });
+  if (!result.success) {
+    console.error(result.error);
+    process.exit(1);
+  }
+}
+
+async function run() {
+  const args = process.argv.slice(2);
+
+  // statusline 命令（被 Claude Code 调用，需要快速响应）
+  if (args[0] === "statusline") {
+    loadCatalog(); // 同步加载模型目录（统计窗口大小用）
+    await statusLineCommand();
+    return;
+  }
+
+  // install 命令：tako install <client> [version]
+  // - 不带 version：列出 npm registry 上的所有版本
+  // - 带 version：安装该版本到 TOOLS_DIR/<client>
+  if (args[0] === "install") {
+    await runInstallCommand(args.slice(1));
+    return;
+  }
+
+  // agent 命令：tako agent [--model <model>] [--yolo]
+  if (args[0] === "agent") {
+    loadCatalog();
+    const { runAgentCommand } = await import("./agent/command");
+    await runAgentCommand(args.slice(1));
+    return;
+  }
+
+  if (args.includes("-v") || args.includes("--version")) {
+    console.log(`Tako CLI v${VERSION}`);
+    return;
+  }
+
+  if (args.includes("-h") || args.includes("--help")) {
+    showHelp();
+    return;
+  }
+
+  // dev 模式不自动更新：源码直跑（VERSION=dev）/ 显式 TAKO_DEV / localhost server
+  const isDev = VERSION === "dev" || IS_DEV;
+
+  // 初始化埋点
+  identify();
+  track("cli_started");
+
+  // 快捷启动命令
+  if (args.includes("--claude")) {
+    if (!isDev) await checkAndUpdate();
+    await quickLaunch("claude-code", "Claude Code");
+    return;
+  }
+  if (args.includes("--codex")) {
+    if (!isDev) await checkAndUpdate();
+    await quickLaunch("codex", "Codex");
+    return;
+  }
+  if (args.includes("--gemini")) {
+    if (!isDev) await checkAndUpdate();
+    await quickLaunch("gemini", "Gemini CLI");
+    return;
+  }
+
+  // 检查自动更新
+  if (!isDev) await checkAndUpdate();
+
+  // 注入 statusline 配置到 Claude Code
+  injectStatusLineConfig().catch(() => {});
+
+  // 模型目录：先同步加载本地缓存，再后台刷新最新（不阻塞主程序）
+  loadCatalog();
+  refreshCatalog().catch(() => {});
+
+  // 运行 Ink TUI 主程序
+  await main();
+}
+
+process.on("beforeExit", async () => { await shutdown(); });
+process.on("SIGINT", async () => { await shutdown(); process.exit(0); });
+process.on("SIGTERM", async () => { await shutdown(); process.exit(0); });
+
+run().catch(async (error) => {
+  console.error(t("cli.cliError"), error);
+  await shutdown();
+  process.exit(1);
+});
