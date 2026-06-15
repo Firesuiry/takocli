@@ -14,6 +14,7 @@ const result = await Bun.build({
   naming: "index.js",
   minify: true,
   target: "bun",
+  external: ["react-devtools-core"],
   define: {
     "process.env.VERSION": JSON.stringify(version),
   },
