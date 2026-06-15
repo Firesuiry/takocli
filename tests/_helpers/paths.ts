@@ -1,8 +1,8 @@
 import { join } from "path";
 import { homedir } from "os";
 
-/** Get Tako root directory */
-export const getTakoDir = () => join(homedir(), ".tako");
+/** Get Tako root directory (honors TAKO_HOME override, same as src/config.ts) */
+export const getTakoDir = () => process.env.TAKO_HOME || join(homedir(), ".tako");
 
 /** Get Tako CLI directory */
 export const getTakoCliDir = () => join(getTakoDir(), "cli");

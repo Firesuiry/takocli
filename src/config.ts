@@ -2,7 +2,10 @@ import { homedir } from "os";
 import { join } from "path";
 
 // Tako 配置目录
-export const TAKO_DIR = join(homedir(), ".tako");
+// TAKO_HOME 环境变量可覆盖根目录（默认 ~/.tako）。
+// 用途：e2e 测试隔离（容器/子进程内指向临时目录，不污染真实 ~/.tako），
+// 以及高级用户自定义 tako 目录。未设置时行为与旧版完全一致（向后兼容）。
+export const TAKO_DIR = process.env.TAKO_HOME || join(homedir(), ".tako");
 export const CONFIG_PATH = join(TAKO_DIR, "config.json");
 export const TOOLS_DIR = join(TAKO_DIR, "tools");
 
@@ -16,6 +19,11 @@ export const TAKO_BUN_BIN = join(
   "bin",
   process.platform === "win32" ? "bun.exe" : "bun"
 );
+
+// Tako 专属 bun install cache（与全局 ~/.bun/install/cache 隔离）。
+// INV-INST-02：tako 安装 client 包必须用此独立 cache，避免全局 bun 操作
+// （卸载、bun pm cache rm）波及隔离目录的 node_modules（2026-06-15 事故缺陷 A）。
+export const TAKO_BUN_CACHE_DIR = join(TAKO_BUN_DIR, "install-cache");
 
 // Tako 服务器地址 (可通过环境变量覆盖，用于本地开发)
 export const TAKO_SERVER = process.env.TAKO_SERVER || "https://tako.shiroha.tech";

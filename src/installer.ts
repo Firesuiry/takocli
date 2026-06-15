@@ -2,7 +2,7 @@ import { join } from "path";
 import { log, createSpinner } from "./logger";
 import { inkConfirm } from "./ui/ink/views/ConfirmDialog";
 import { ClientConfig, getClientDir } from "./clients/base";
-import { loadConfig, updateConfig, TAKO_DIR, TAKO_BUN_DIR, TAKO_BUN_BIN } from "./config";
+import { loadConfig, updateConfig, TAKO_DIR, TAKO_BUN_DIR, TAKO_BUN_BIN, TAKO_BUN_CACHE_DIR } from "./config";
 import { getNpmRegistry, getBunInstallCommand, detectRegion, showRegionInfo, getBunMirrorDownloadUrl } from "./region";
 import { track } from "./analytics";
 import { streamBunInstall } from "./bun-progress";
@@ -19,6 +19,19 @@ const MINIMUM_BUN_VERSION_FOR_PTY = "1.3.5";
  */
 function isPathInTakoDir(path: string): boolean {
   return path.startsWith(TAKO_BUN_DIR);
+}
+
+/**
+ * 构造 tako 安装 client 包时的 bun env。
+ * INV-INST-02：注入独立 BUN_INSTALL_CACHE_DIR，与全局 ~/.bun/install/cache 隔离，
+ * 避免全局 bun 操作（卸载 / bun pm cache rm）波及 tako 隔离目录的 node_modules。
+ */
+export function buildBunInstallEnv(registry: string): Record<string, string> {
+  return {
+    ...process.env,
+    BUN_CONFIG_REGISTRY: registry,
+    BUN_INSTALL_CACHE_DIR: TAKO_BUN_CACHE_DIR,
+  };
 }
 
 /**
@@ -403,18 +416,39 @@ async function getLocalVersion(client: ClientConfig): Promise<string | null> {
 }
 
 /**
+ * 判断一个 client 安装目录是否真正装好了包（纯函数，便于测试）。
+ *
+ * INV-INST-01：判定"已安装"必须看真正的包入口
+ *   node_modules/<package>/package.json，而不是 tako 自己在 bun add 之前
+ *   写的占位 <clientDir>/package.json。
+ *
+ * 背景（2026-06-15 事故）：旧实现只检查占位 package.json 是否存在。但
+ * installClient 在 `bun add` 之前就先落盘了占位 package.json（含 name/private/
+ * dependencies）。一旦更新流程"先删 node_modules 再 bun add"中途失败，就会留下
+ * "有壳无实"状态——占位文件在、node_modules 没了。旧实现据此误判为"已安装"，
+ * 导致永不重装，并在启动时 fallback 到全局安装（codex/claude-code 同时中招）。
+ *
+ * @param clientDir 客户端安装目录（~/.tako/tools/<id>）
+ * @param packageName npm 包名（如 @openai/codex）
+ */
+export async function isPackageInstalledAt(
+  clientDir: string,
+  packageName: string,
+): Promise<boolean> {
+  const pkgEntryPath = join(clientDir, "node_modules", packageName, "package.json");
+  try {
+    return await Bun.file(pkgEntryPath).exists();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 检查客户端是否已安装
  */
 export async function isClientInstalled(client: ClientConfig): Promise<boolean> {
   const clientDir = getClientDir(client.id);
-  const packageJsonPath = join(clientDir, "package.json");
-
-  try {
-    const file = Bun.file(packageJsonPath);
-    return await file.exists();
-  } catch {
-    return false;
-  }
+  return isPackageInstalledAt(clientDir, client.package);
 }
 
 /**
@@ -490,7 +524,7 @@ async function ensurePlatformDep(
           cwd: clientDir,
           stdout: "pipe",
           stderr: "pipe",
-          env: { ...process.env, BUN_CONFIG_REGISTRY: registry },
+          env: buildBunInstallEnv(registry),
         }
       );
       await proc.exited;
@@ -717,12 +751,13 @@ export async function installClient(
     const region = await detectRegion();
     log.info(`网络环境: ${region === "cn" ? "国内（npmmirror）" : "海外"} | registry: ${registry}`);
 
-    // 如果是更新，删除 lockfile + node_modules 确保 optional deps 也更新
+    // 更新时只删 lockfile（强制 bun 重解析以拿到 optional deps 新版本），
+    // 保留 node_modules。
+    // INV-INST-03：更新过程不破坏现有可用安装——bun add 会原地更新 node_modules，
+    // 即使失败旧版本仍在，避免"先删后装失败"留下半残状态（2026-06-15 事故缺陷 B）。
     if (isInstalled) {
       const lockfilePath = join(clientDir, "bun.lock");
-      const nmPath = join(clientDir, "node_modules");
       await fs.rm(lockfilePath, { force: true }).catch(() => {});
-      await fs.rm(nmPath, { recursive: true, force: true }).catch(() => {});
     }
 
     // 使用 bun 安装包（指定 @latest 确保获取最新版本）
@@ -732,10 +767,7 @@ export async function installClient(
         cwd: clientDir,
         stdout: "pipe",
         stderr: "pipe",
-        env: {
-          ...process.env,
-          BUN_CONFIG_REGISTRY: registry,
-        },
+        env: buildBunInstallEnv(registry),
       }
     );
 
@@ -745,6 +777,12 @@ export async function installClient(
 
     if (exitCode !== 0) {
       s.stop(`${action} ${client.name} 失败`);
+      // INV-INST-03：失败不留半残状态。
+      // - 全新安装失败：清掉刚写的占位 package.json，让目录回到"未初始化"。
+      // - 更新失败：保留 node_modules（已保留，未删），旧版本仍可用。
+      if (!isInstalled) {
+        await fs.rm(packageJsonPath, { force: true }).catch(() => {});
+      }
       return { success: false, error: output || "未知错误" };
     }
 
