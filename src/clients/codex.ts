@@ -115,11 +115,11 @@ async function setupCodexConfigFiles(
     if (provider.apiKey) {
       takoProvider.experimental_bearer_token = provider.apiKey;
     }
-    if (provider.type === "tako") {
-      takoProvider.supports_websockets = true;
-    } else {
-      stripTakoWsFeatures(existing);
-    }
+    // 不给 tako provider 开 WS。WS upgrade 是 GET,par 握手阶段拿不到 model 无法
+    // 分流 → GPT 的 WS 会被错塞子进程转换 → codex "unsupported call" 死循环。
+    // 全部走 POST /v1/responses(POST 带 model,par 能正确分流 GPT 直连 / 非 OpenAI
+    // 经子进程)。所有 provider 切换都清掉旧 config 里残留的 WS 标记(旧版升级兜底)。
+    stripTakoWsFeatures(existing);
     const cfg: Record<string, any> = {
       model_provider: "tako",
       model,
@@ -130,9 +130,6 @@ async function setupCodexConfigFiles(
       },
     };
     if (ctxWindow) cfg.model_context_window = ctxWindow;
-    if (provider.type === "tako") {
-      cfg.features = { multi_agent: true, responses_websockets_v2: true };
-    }
     existing = deepMerge(existing, cfg);
   }
 
