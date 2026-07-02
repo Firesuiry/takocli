@@ -44,6 +44,15 @@ function pageSizing(renderer: CliRenderer) {
     : { height: "100%" as const };
 }
 
+function maxScrollTop(scroll: ScrollBoxRenderable) {
+  return Math.max(0, scroll.scrollHeight - scroll.viewport.height);
+}
+
+function syncScrollOffset(state: AppState, scroll: ScrollBoxRenderable) {
+  if (maxScrollTop(scroll) <= 0) return;
+  state.scrollOffset = Math.max(0, Math.round(scroll.scrollTop));
+}
+
 function mountRoot(renderer: CliRenderer, state: AppState, root: Renderable) {
   if (!shouldUseScroll(renderer)) {
     renderer.root.add(root);
@@ -57,14 +66,28 @@ function mountRoot(renderer: CliRenderer, state: AppState, root: Renderable) {
     scrollX: false,
     viewportCulling: false,
   });
+  let restoreTarget = state.scrollOffset;
+  let restoring = false;
+  const restoreScrollOffset = () => {
+    if (restoreTarget <= 0) return;
+    const maxTop = maxScrollTop(scroll);
+    if (maxTop <= 0) return;
+    restoring = true;
+    scroll.scrollTop = Math.min(restoreTarget, maxTop);
+    restoring = false;
+  };
+  scroll.verticalScrollBar.on("change", () => {
+    if (restoring) return;
+    syncScrollOffset(state, scroll);
+    restoreTarget = state.scrollOffset;
+  });
+  scroll.content.on("resize", restoreScrollOffset);
+  scroll.viewport.on("resize", restoreScrollOffset);
   scroll.add(root);
   renderer.root.add(scroll);
   if (state.scrollOffset > 0) {
-    scroll.scrollTop = state.scrollOffset;
-    process.nextTick(() => {
-      scroll.scrollTop = state.scrollOffset;
-      renderer.requestRender();
-    });
+    restoreScrollOffset();
+    process.nextTick(restoreScrollOffset);
   }
 }
 
