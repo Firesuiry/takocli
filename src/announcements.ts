@@ -18,9 +18,9 @@ import { loadConfig, saveConfig, IS_DEV } from "./config";
 import { getDefaultProvider, getProviders } from "./providers";
 import type { Provider } from "./providers/types";
 import {
-  showAnnouncementPrompt,
+  showAnnouncementDialog,
   type AnnouncementPayload,
-} from "./ui/opentui/terminal";
+} from "./ui/ink/views/AnnouncementDialog";
 
 const FETCH_TIMEOUT_MS = 2_000;
 const MAX_SEEN_IDS = 100;
@@ -135,7 +135,7 @@ export async function fetchAndMaybeShowAnnouncement(): Promise<void> {
   }
 
   debug(`弹窗：${ann.id}`);
-  await showAnnouncementPrompt(ann);
+  await showAnnouncementDialog(ann);
 
   if (ann.popup_once) {
     await markSeen(ann.id);

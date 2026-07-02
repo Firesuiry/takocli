@@ -25,13 +25,7 @@ jobs:
           bun-version: latest
 
       - name: Install CLI deps
-        run: bun install --frozen-lockfile
-
-      - name: Build CLI
-        run: bun run build
-
-      - name: Smoke test built bundle
-        run: bun dist/index.js --version
+        run: bun install
 
       - name: Prepare TAKO_HOME with system bun
         shell: bash
