@@ -1,4 +1,8 @@
+import { writeFile } from "node:fs/promises";
+
 export const WINDOWS_HANDOFF_ENV = "TAKO_WINDOWS_HANDOFF_FILE";
+
+const UTF8_BOM = new Uint8Array([0xef, 0xbb, 0xbf]);
 
 function psSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -29,6 +33,23 @@ export interface WindowsHandoffScriptOptions {
    * 不传则子进程退出后 handoff 直接结束（等价于 quick-launch）。
    */
   relaunchCommand?: string[];
+}
+
+export function encodeWindowsPowerShellScript(script: string): Uint8Array {
+  const body = new TextEncoder().encode(script);
+  const bytes = new Uint8Array(UTF8_BOM.length + body.length);
+  bytes.set(UTF8_BOM, 0);
+  bytes.set(body, UTF8_BOM.length);
+  return bytes;
+}
+
+export async function writeWindowsHandoffScript(
+  path: string,
+  options: WindowsHandoffScriptOptions,
+): Promise<void> {
+  // Windows PowerShell 5.1 reads UTF-8 without BOM as the active ANSI code page.
+  // That turns paths like "WPS云盘\我的模板" into mojibake before Set-Location runs.
+  await writeFile(path, encodeWindowsPowerShellScript(buildWindowsHandoffScript(options)));
 }
 
 /**

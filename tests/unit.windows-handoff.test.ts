@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildWindowsHandoffScript } from "../src/windows-handoff";
+import { buildWindowsHandoffScript, encodeWindowsPowerShellScript } from "../src/windows-handoff";
 
 describe("Windows handoff script", () => {
   it("quotes paths, args, cwd, and env values for PowerShell", () => {
@@ -75,5 +75,21 @@ describe("Windows handoff script", () => {
       relaunchCommand: [],
     });
     expect(withEmpty).not.toContain("@relaunchArgv");
+  });
+
+  it("encodes handoff scripts as UTF-8 with BOM for Windows PowerShell 5.1", () => {
+    const script = buildWindowsHandoffScript({
+      command: ["C:\\Windows\\System32\\cmd.exe", "/c", "echo", "ok"],
+      cwd: "C:\\Users\\46907\\WPSDrive\\685145570\\WPS云盘\\我的模板",
+      env: {
+        TAKO_TEST_VALUE: "中文'value",
+      },
+    });
+    const bytes = encodeWindowsPowerShellScript(script);
+
+    expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+    const decoded = new TextDecoder("utf-8").decode(bytes.slice(3));
+    expect(decoded).toContain("WPS云盘\\我的模板");
+    expect(decoded).toContain("$env:TAKO_TEST_VALUE = '中文''value'");
   });
 });
