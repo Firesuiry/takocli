@@ -1,6 +1,6 @@
 import { ClientConfig, getClientBinPath, getClientEntryPath } from "./clients/base";
 import { getBunPath } from "./installer";
-import { buildWindowsHandoffScript, WINDOWS_HANDOFF_ENV } from "./windows-handoff";
+import { WINDOWS_HANDOFF_ENV, writeWindowsHandoffScript } from "./windows-handoff";
 
 // LaunchOptions 的权威定义在 ./launcher/index.ts；这里复用避免字段漂移。
 // import type 不引入运行时依赖，不会和 launcher/index.ts 对本模块的 import 形成循环。
@@ -83,27 +83,24 @@ export async function launchClient(
     }
 
     if (isWindows && options?.handoffOnWindows) {
-      const fs = await import("fs/promises");
       const handoffPath = process.env[WINDOWS_HANDOFF_ENV];
       if (handoffPath) {
         // quick-launch：handoff 由外层 cmd/ps1 wrapper 执行，wrapper 进程环境里
         // 没有 client.getEnvVars() 算出的 token，故必须显式写进脚本。脚本用
         // finally 保证执行后自删，token 不残留。
-        await fs.writeFile(
+        await writeWindowsHandoffScript(
           handoffPath,
-          buildWindowsHandoffScript({
+          {
             command,
             cwd: workingDir,
             env: extraEnv,
-          }),
-          "utf8",
+          },
         );
         return { success: true };
       }
     }
 
     if (isWindows && options?.relaunchTakoOnWindows) {
-      const fs = await import("fs/promises");
       const handoffPath = process.env[WINDOWS_HANDOFF_ENV];
       if (handoffPath) {
         // 面板路径：和 quick-launch 一样把启动交给外层 wrapper 执行，Bun 退出后
@@ -115,15 +112,14 @@ export async function launchClient(
         const relaunchCommand = [process.argv[0], process.argv[1]].filter(
           (a): a is string => typeof a === "string" && a.length > 0,
         );
-        await fs.writeFile(
+        await writeWindowsHandoffScript(
           handoffPath,
-          buildWindowsHandoffScript({
+          {
             command,
             cwd: workingDir,
             env: extraEnv,
             relaunchCommand,
-          }),
-          "utf8",
+          },
         );
         return { success: true };
       }
@@ -148,13 +144,12 @@ export async function launchClient(
       const handoffPath = join(tmpdir(), `tako-handoff-${process.pid}-${Date.now()}.ps1`);
       // 交互式路径由本进程直接起 PowerShell，PowerShell 继承本进程的 env，
       // 故 handoff 脚本不写 extraEnv（避免 token 明文落盘）。
-      await fs.writeFile(
+      await writeWindowsHandoffScript(
         handoffPath,
-        buildWindowsHandoffScript({
+        {
           command,
           cwd: workingDir,
-        }),
-        "utf8",
+        },
       );
 
       await releaseStdinForChild();
