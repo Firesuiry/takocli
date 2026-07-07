@@ -6,12 +6,21 @@ import { t } from "./i18n";
 import { track } from "./analytics";
 import { streamBunInstall } from "./bun-progress";
 import { buildWindowsCmdWrapper, buildWindowsPs1Wrapper } from "./windows-wrapper";
+import { summarizeInstallError } from "./error-format";
 
 // Tako CLI 包名
 const PACKAGE_NAME = "tako-cli";
 
 // 当前版本（构建时自动从 package.json 注入）
 export const CURRENT_VERSION = process.env.VERSION || "0.0.0";
+
+export function buildCliUpdateCommand(): string[] {
+  return [TAKO_BUN_BIN, "update", PACKAGE_NAME, "--latest"];
+}
+
+export function buildCliInstallCommand(): string[] {
+  return [TAKO_BUN_BIN, "add", `${PACKAGE_NAME}@latest`];
+}
 
 /**
  * 比较版本号
@@ -128,7 +137,7 @@ async function performUpdate(latestVersion: string): Promise<boolean> {
     // 在 Tako CLI 目录下执行更新
     // 使用 bun update --latest 强制更新到最新版本（bun add 受 lockfile 影响可能不会更新）
     const proc = Bun.spawn(
-      [TAKO_BUN_BIN, "update", PACKAGE_NAME, "--latest"],
+      buildCliUpdateCommand(),
       {
         cwd: TAKO_CLI_DIR,
         stdout: "pipe",
@@ -157,11 +166,13 @@ async function performUpdate(latestVersion: string): Promise<boolean> {
       s.stop(`更新成功！已更新到 v${latestVersion}`);
       return true;
     } else {
-      s.stop(`更新失败: ${output || "未知错误"}`);
+      s.stop();
+      log.warn(`更新失败: ${summarizeInstallError(output)}`);
       return false;
     }
   } catch (error) {
-    s.stop(`更新失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    s.stop();
+    log.warn(`更新失败: ${summarizeInstallError(error instanceof Error ? error.message : undefined)}`);
     return false;
   }
 }
@@ -207,7 +218,7 @@ async function installToLocal(): Promise<boolean> {
 
     // 安装到本地
     const proc = Bun.spawn(
-      [TAKO_BUN_BIN, "add", `${PACKAGE_NAME}@latest`],
+      buildCliInstallCommand(),
       {
         cwd: TAKO_CLI_DIR,
         stdout: "pipe",
